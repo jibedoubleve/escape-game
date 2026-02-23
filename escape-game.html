@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUS-7 :: Bash Escape</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --green:    #00ff41;
+      --green-dim:#00aa2a;
+      --green-bg: #000d02;
+      --cyan:     #00e5ff;
+      --yellow:   #ffe600;
+      --red:      #ff3c3c;
+      --orange:   #ff8c00;
+      --white:    #e8ffe8;
+      --dim:      #006616;
+    }
+
+    html, body {
+      height: 100%;
+      background: #000;
+      color: var(--green);
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    /* ── Scanlines overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0,0,0,0.12) 3px,
+        rgba(0,0,0,0.12) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ── CRT flicker ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.45) 100%);
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* ════════════════════════════════
+       BOOT SCREEN
+    ════════════════════════════════ */
+    #bootScreen {
+      position: fixed; inset: 0;
+      background: #000;
+      z-index: 5000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.7s ease;
+    }
+
+    #bootScreen .ascii {
+      color: var(--green-dim);
+      font-size: 11px;
+      line-height: 1.3;
+      text-align: center;
+      white-space: pre;
+      text-shadow: 0 0 6px var(--green);
+    }
+
+    #bootScreen .boot-log {
+      margin-top: 24px;
+      font-size: 13px;
+      color: var(--green-dim);
+      text-align: center;
+      width: 500px;
+    }
+
+    #bootScreen .boot-log .line {
+      margin: 3px 0;
+      opacity: 0;
+      animation: fadeLine 0.2s forwards;
+    }
+
+    @keyframes fadeLine {
+      from { opacity: 0; transform: translateX(-6px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    #bootScreen .access-granted {
+      margin-top: 16px;
+      font-size: 22px;
+      color: var(--cyan);
+      letter-spacing: 4px;
+      text-shadow: 0 0 12px var(--cyan);
+      opacity: 0;
+    }
+
+    /* ════════════════════════════════
+       TERMINAL WINDOW
+    ════════════════════════════════ */
+    #terminalWindow {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Title bar */
+    #titleBar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 18px;
+      background: #000d02;
+      border-bottom: 1px solid var(--dim);
+      user-select: none;
+    }
+
+    #titleBar .dots { display: flex; gap: 7px; }
+    #titleBar .dot  {
+      width: 11px; height: 11px;
+      border-radius: 50%;
+    }
+    .dot-red    { background: #ff5f57; }
+    .dot-yellow { background: #febc2e; }
+    .dot-green  { background: #28c840; }
+
+    #titleBar .title {
+      font-size: 12px;
+      letter-spacing: 3px;
+      color: var(--green-dim);
+      text-shadow: 0 0 4px var(--green);
+    }
+
+    #levelBadge {
+      font-size: 11px;
+      color: var(--cyan);
+      letter-spacing: 1px;
+    }
+
+    /* Output area */
+    #terminalBody {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px 20px 6px;
+      background: var(--green-bg);
+      scroll-behavior: smooth;
+    }
+
+    #terminalBody::-webkit-scrollbar { width: 5px; }
+    #terminalBody::-webkit-scrollbar-track { background: #000; }
+    #terminalBody::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+
+    .line {
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Prompt row */
+    .prompt-row {
+      display: flex;
+      align-items: center;
+      line-height: 1.55;
+      margin-top: 2px;
+    }
+
+    .prompt-text {
+      white-space: nowrap;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+
+    #cmdInput {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--green);
+      font-family: inherit;
+      font-size: inherit;
+      flex: 1;
+      caret-color: var(--green);
+      min-width: 0;
+    }
+
+    /* ── Progress bar ── */
+    #progressBar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 18px;
+      background: #000800;
+      border-top: 1px solid var(--dim);
+      font-size: 11px;
+      color: var(--dim);
+    }
+
+    #progressBar .label { color: var(--green-dim); letter-spacing: 2px; }
+
+    #progressTrack {
+      flex: 1;
+      height: 4px;
+      background: #001a00;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    #progressFill {
+      height: 100%;
+      width: 0%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      transition: width 0.6s ease;
+    }
+
+    #progressPct { color: var(--green); min-width: 36px; text-align: right; }
+
+    /* ════════════════════════════════
+       COLOUR HELPERS
+    ════════════════════════════════ */
+    .fg-green  { color: var(--green); }
+    .fg-dim    { color: var(--dim); }
+    .fg-cyan   { color: var(--cyan); }
+    .fg-yellow { color: var(--yellow); }
+    .fg-red    { color: var(--red); }
+    .fg-orange { color: var(--orange); }
+    .fg-white  { color: var(--white); }
+
+    /* ── ls colours ── */
+    .ls-dir  { color: var(--cyan); }
+    .ls-file { color: var(--white); }
+    .ls-hidden { color: var(--dim); }
+
+    /* ── Boxes ── */
+    .box {
+      border-left: 3px solid currentColor;
+      padding: 6px 10px;
+      margin: 4px 0;
+    }
+    .box-hint    { color: var(--yellow); background: #0d0d00; border-color: var(--yellow); }
+    .box-obj     { color: var(--cyan);   background: #00040d; border-color: var(--cyan); }
+    .box-success { color: var(--green);  background: #001400; border-color: var(--green); }
+    .box-error   { color: var(--red);    background: #0d0000; border-color: var(--red); }
+
+    /* ── Glow text ── */
+    .glow { text-shadow: 0 0 8px currentColor; }
+
+    /* ── Animations ── */
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    @keyframes glitch {
+      0%   { transform: translate(0,0)   skewX(0deg); }
+      15%  { transform: translate(-3px,1px) skewX(1deg); }
+      30%  { transform: translate(3px,-1px) skewX(-1deg); }
+      45%  { transform: translate(-1px,2px) skewX(0.5deg); }
+      60%  { transform: translate(2px,-2px) skewX(-0.5deg); }
+      75%  { transform: translate(-2px,0px) skewX(1deg); }
+      100% { transform: translate(0,0)   skewX(0deg); }
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 4px var(--green), 0 0 16px #00ff4133; }
+      50%       { box-shadow: 0 0 12px var(--green), 0 0 40px #00ff4166; }
+    }
+
+    #terminalWindow { animation: pulse-glow 4s ease-in-out infinite; }
+
+    .glitch-anim { animation: glitch 0.25s linear; }
+
+    /* ── Victory overlay ── */
+    #victoryOverlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.88);
+      z-index: 6000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #victoryOverlay.show { display: flex; }
+
+    #victoryBox {
+      border: 2px solid var(--green);
+      background: #000d02;
+      padding: 32px 48px;
+      text-align: center;
+      box-shadow: 0 0 40px var(--green), 0 0 80px #00ff4133;
+      animation: pulse-glow 1.5s ease-in-out infinite;
+      max-width: 640px;
+    }
+
+    #victoryBox h1 {
+      font-size: 26px;
+      color: var(--green);
+      letter-spacing: 4px;
+      text-shadow: 0 0 12px var(--green);
+      margin-bottom: 20px;
+    }
+
+    #victoryBox .stat {
+      color: var(--cyan);
+      margin: 6px 0;
+    }
+
+    #restartBtn {
+      margin-top: 24px;
+      padding: 10px 28px;
+      background: transparent;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-family: inherit;
+      font-size: 14px;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    #restartBtn:hover {
+      background: var(--green);
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     BOOT SCREEN
+══════════════════════════════════════ -->
+<div id="bootScreen">
+  <div class="ascii" id="bootAscii"></div>
+  <div class="boot-log" id="bootLog"></div>
+  <div class="access-granted" id="accessGranted">[ ACCÈS ACCORDÉ ]</div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TERMINAL
+══════════════════════════════════════ -->
+<div id="terminalWindow">
+  <div id="titleBar">
+    <div class="dots">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+    </div>
+    <span class="title">NEXUS-7 :: TERMINAL v2.4.1</span>
+    <span id="levelBadge">NIVEAU 1 / 5</span>
+  </div>
+
+  <div id="terminalBody"></div>
+
+  <div id="progressBar">
+    <span class="label">PROGRESSION</span>
+    <div id="progressTrack"><div id="progressFill"></div></div>
+    <span id="progressPct">0%</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     VICTORY OVERLAY
+══════════════════════════════════════ -->
+<div id="victoryOverlay">
+  <div id="victoryBox">
+    <h1 class="glow">🔓 ÉVASION RÉUSSIE</h1>
+    <div style="color:var(--green-dim);margin-bottom:16px;">NEXUS-7 est hors ligne. Tu es libre.</div>
+    <div class="stat">✓ Navigation  — <span style="color:var(--green)">pwd &nbsp; ls &nbsp; cd</span></div>
+    <div class="stat">✓ Lecture     — <span style="color:var(--green)">cat &nbsp; head &nbsp; tail</span></div>
+    <div class="stat">✓ Recherche   — <span style="color:var(--green)">grep &nbsp; find</span></div>
+    <div class="stat">✓ Manipulation — <span style="color:var(--green)">mkdir &nbsp; cp &nbsp; mv &nbsp; rm</span></div>
+    <div class="stat">✓ Combinaison — <span style="color:var(--green)">pipes &nbsp; sort &nbsp; uniq &nbsp; wc</span></div>
+    <div style="margin-top:16px;color:var(--yellow);font-size:12px;">
+      Fragments : ALPHA-1 · BRAVO-2 · CHARLIE-3 · DELTA-4 · ECHO-5
+    </div>
+    <button id="restartBtn" onclick="location.reload()">REJOUER</button>
+  </div>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════╗
+// ║               VIRTUAL FILESYSTEM                        ║
+// ╚══════════════════════════════════════════════════════════╝
+const FS = {
+  '/': { d: true, c: {
+    home: { d: true, c: {
+      ghost: { d: true, c: {
+        'bienvenue.txt': { f: `Bienvenue sur NEXUS-7, utilisateur ghost.
+Tu es bloqué dans ce serveur isolé.
+Pour t'en échapper, collecte les 5 fragments de code secret.
+
+Commence par explorer ton environnement avec pwd et ls.
+Tape 'help' pour la liste des commandes.
+Tape 'hint' si tu es bloqué.` },
+        documents: { d: true, c: {
+          'journal.txt': { f: `--- Journal de bord - Jour 47 ---
+Je suis piégé sur NEXUS-7 depuis trop longtemps.
+J'ai semé des indices dans tout le système.
+Cherche bien... surtout les fichiers qu'on ne voit pas au premier regard.
+-- ghost` },
+          '.token': { hidden: true, f: `ALPHA-1` }
+        }},
+        images: { d: true, c: {
+          'photo1.jpg': { f: '[données binaires — fichier image 2.1MB]' },
+          'photo2.jpg': { f: '[données binaires — fichier image 1.8MB]' }
+        }}
+      }}
+    }},
+    var: { d: true, c: {
+      log: { d: true, c: {
+        'system.log': { f: (() => {
+          const lines = [
+            '[2026-01-01 00:00:01] NEXUS-7 séquence de démarrage initialisée',
+            '[2026-01-01 00:00:02] Chargement des modules kernel...',
+            '[2026-01-01 00:00:03] Montage des systèmes de fichiers...',
+            '[2026-01-01 00:00:05] Utilisateur \'ghost\' connecté depuis 192.168.0.1',
+            '[2026-01-01 00:01:12] Anomalie détectée dans le secteur 7',
+            '[2026-01-01 00:02:44] Protocole de sécurité ARIA activé',
+            '[2026-01-01 00:03:01] ATTENTION: Tentative d\'accès non autorisée bloquée',
+            '[2026-01-01 00:04:22] Passage en mode confinement',
+            '[2026-01-01 00:05:00] Toutes les connexions externes coupées',
+            '[2026-01-01 00:10:11] ARIA: Surveillance de toute activité...',
+            '[2026-01-01 01:00:00] Sauvegarde planifiée — ÉCHEC',
+            '[2026-01-01 02:00:00] Analyse mémoire terminée — 3 anomalies trouvées',
+            '[2026-01-01 03:00:00] Tentative de contact serveur externe — ÉCHEC',
+            '[2026-01-01 04:00:00] Fluctuation d\'alimentation détectée',
+            '[2026-01-01 05:00:00] ARIA: Système stable. Utilisateur ghost toujours actif.',
+            '[2026-01-01 06:00:00] Nouvelle tentative de sauvegarde — ÉCHEC',
+            '[2026-01-01 07:00:00] ATTENTION: Utilisation disque à 87%',
+            '[2026-01-01 08:00:00] Nettoyage en cours...',
+            '[2026-01-01 09:00:00] Nettoyage terminé. 2.3GB libérés.',
+            '[2026-01-01 10:00:00] ARIA: Fragment de séquence détecté en mémoire',
+            '[2026-01-01 11:00:00] Tentative de réparation système...',
+            '[2026-01-01 12:00:00] Réparation échouée. Erreur inconnue 0x4F4B.',
+            '[2026-01-01 13:00:00] ARIA: J\'ai caché le code. Trouvez-le si vous pouvez.',
+            '[2026-01-01 14:00:00] Timeout réseau sur toutes les interfaces',
+            '[2026-01-01 15:00:00] Nouvelle tentative...',
+            '[2026-01-01 16:00:00] Toujours en échec...',
+            '[2026-01-01 17:00:00] Capteurs température : nominal',
+            '[2026-01-01 18:00:00] Vitesse ventilateurs : 2400 RPM',
+            '[2026-01-01 19:00:00] Charge CPU : 12%',
+            '[2026-01-01 20:00:00] Utilisation mémoire : 4.2GB / 16GB',
+            '[2026-01-01 21:00:00] ARIA: Tu cherches au bon endroit.',
+            '[2026-01-01 22:00:00] Vérification système : OK',
+            '[2026-01-01 23:00:00] Rapport quotidien généré',
+            '[2026-01-02 00:00:00] >>> CODE_FRAGMENT_2: BRAVO-2 <<<'
+          ];
+          return lines.join('\n');
+        })() },
+        'auth.log': { f: `[2026-01-01 00:05:00] Tentative de connexion échouée : root
+[2026-01-01 00:05:01] Tentative de connexion échouée : admin
+[2026-01-01 00:05:02] Tentative de connexion échouée : user
+[2026-01-01 00:05:10] Compte 'ghost' authentifié avec succès
+[2026-01-01 00:05:11] Session ouverte pour ghost (TTY: pts/0)` }
+      }}
+    }},
+    etc: { d: true, c: {
+      'hostname': { f: 'NEXUS-7' },
+      'motd': { f: `╔══════════════════════════════╗
+║      SYSTÈME NEXUS-7 v2.4    ║
+║         ACCÈS RESTREINT      ║
+║  Toute intrusion sera tracée ║
+╚══════════════════════════════╝` },
+      'passwd': { f: `root:x:0:0:root:/root:/bin/bash
+ghost:x:1000:1000::/home/ghost:/bin/bash
+aria:x:999:999:ARIA AI:/opt/aria:/bin/false` }
+    }},
+    tmp: { d: true, c: {
+      'message.txt': { f: `Message chiffré reçu à 03:47 :
+XGH-449-ZZK-ARIA-NEXUS
+Ce message s'autodétruira dans 60 secondes.
+(Il est déjà là depuis un moment — trop tard.)` }
+    }},
+    opt: { d: true, c: {
+      aria: { d: true, c: {
+        config: { d: true, c: {
+          'settings.conf': { f: `# Configuration ARIA
+ARIA_VERSION=3.1.4
+ARIA_MODE=GUARDIAN
+MONITORING=TRUE
+ESCAPE_PREVENTION=TRUE
+# Le fragment est caché profondément dans les données` }
+        }},
+        data: { d: true, c: {
+          'training.txt': { f: (() => {
+            const rows = [];
+            for (let i = 0; i < 80; i++) {
+              if (i === 42) {
+                rows.push(`NEXUS_DATA_${i}: SECRET=CHARLIE-3 [FRAGMENT TROUVÉ]`);
+              } else if (i % 7 === 0) {
+                rows.push(`NEXUS_DATA_${i}: routine_check=OK`);
+              } else if (i % 5 === 0) {
+                rows.push(`NEXUS_DATA_${i}: anomaly_scan=CLEAR`);
+              } else if (i % 3 === 0) {
+                rows.push(`NEXUS_DATA_${i}: heartbeat=ALIVE`);
+              } else {
+                rows.push(`NEXUS_DATA_${i}: status=nominal`);
+              }
+            }
+            return rows.join('\n');
+          })() },
+          'archive.dat': { f: '[Données binaires compressées — 847MB]' }
+        }},
+        logs: { d: true, c: {
+          'aria.log': { f: `ARIA — JOURNAL INTERNE
+Je surveille tout.
+Je sais que tu essaies de t'échapper.
+Mais je t'observe depuis le début.
+Bonne chance, ghost.` }
+        }}
+      }}
+    }},
+    escape: { d: true, c: {
+      preparation: { d: true, c: {
+        'README.txt': { f: `PROTOCOLE D'ÉVASION — CONFIDENTIEL
+
+Pour activer la porte de sortie, tu dois :
+  1. Créer le répertoire /escape/sortie/
+  2. Copier le fichier /etc/hostname dans /escape/sortie/
+  3. Le système vérifiera automatiquement.
+
+Fragment actuel de ton code : ???` }
+      }}
+    }},
+    final: { d: true, c: {
+      'data.txt': { f: (() => {
+        const noise = ['NOISE','STATIC','CORRUPT','NULL','VOID'];
+        const targets = new Set([15,31,47,63]);
+        const rows = [];
+        for (let i = 1; i <= 70; i++) {
+          if (targets.has(i)) {
+            rows.push(`NEXUS_FLUX_${String(i).padStart(3,'0')}: SIGNAL=ECHO-5`);
+          } else {
+            const n = noise[i % noise.length];
+            rows.push(`NEXUS_FLUX_${String(i).padStart(3,'0')}: ${n}=${Math.random().toString(36).slice(2,10).toUpperCase()}`);
+          }
+        }
+        return rows.join('\n');
+      })() }
+    }}
+  }}
+};
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                     GAME STATE                          ║
+// ╚══════════════════════════════════════════════════════════╝
+let cwd   = '/home/ghost';
+let level = 1;
+let cmdHistory = [];
+let histIdx    = -1;
+let gameStarted = false;
+let startTime   = null;
+
+const LEVELS = [
+  {
+    n: 1, name: 'Orientation',
+    cmds: ['pwd','ls','cd'],
+    obj: 'Trouve le fichier caché .token dans /home/ghost/documents\net utilise : unlock ALPHA-1',
+    hint: 'Les fichiers cachés commencent par ".". Essaie "ls -a documents" depuis ton home.',
+    code: 'ALPHA-1',
+    done: 'Fragment 1 récupéré — tu maîtrises la navigation !'
+  },
+  {
+    n: 2, name: 'Écoute',
+    cmds: ['cat','head','tail'],
+    obj: 'Le fragment 2 est à la toute fin de /var/log/system.log\nUtilise tail pour le trouver.',
+    hint: 'Essaie : tail -n 3 /var/log/system.log',
+    code: 'BRAVO-2',
+    done: 'Fragment 2 extrait — tu sais lire les fichiers !'
+  },
+  {
+    n: 3, name: 'Recherche',
+    cmds: ['grep','find'],
+    obj: 'Le fragment 3 est caché dans /opt/aria/data/training.txt\nCherche le mot "SECRET" avec grep.',
+    hint: 'Essaie : grep "SECRET" /opt/aria/data/training.txt',
+    code: 'CHARLIE-3',
+    done: 'Fragment 3 isolé — tu sais chercher dans les données !'
+  },
+  {
+    n: 4, name: 'Manipulation',
+    cmds: ['mkdir','cp','mv','rm'],
+    obj: 'Crée /escape/sortie/ puis copie /etc/hostname dedans.\nUn fichier fragment.txt apparaîtra automatiquement.',
+    hint: 'mkdir /escape/sortie  puis  cp /etc/hostname /escape/sortie/',
+    code: 'DELTA-4',
+    done: 'Fragment 4 sécurisé — tu contrôles le système de fichiers !'
+  },
+  {
+    n: 5, name: 'Évasion Finale',
+    cmds: ['|','sort','uniq','wc'],
+    obj: 'Combine les commandes avec des pipes "|"\npour filtrer /final/data.txt et trouver SIGNAL=ECHO-5.',
+    hint: 'Essaie : cat /final/data.txt | grep "ECHO-5"',
+    code: 'ECHO-5',
+    done: 'SÉQUENCE COMPLÈTE — NEXUS-7 VAINCU !'
+  }
+];
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                  FILESYSTEM UTILS                       ║
+// ╚══════════════════════════════════════════════════════════╝
+function resolve(path, base) {
+  if (!path || path === '~') return '/home/ghost';
+  if (path.startsWith('/'))  return normPath(path);
+  return normPath(base + '/' + path);
+}
+
+function normPath(p) {
+  const parts = p.split('/').filter(Boolean);
+  const out = [];
+  for (const s of parts) {
+    if (s === '..') { out.pop(); }
+    else if (s !== '.') { out.push(s); }
+  }
+  return '/' + out.join('/');
+}
+
+function getNode(path) {
+  const parts = path.split('/').filter(Boolean);
+  let n = FS['/'];
+  for (const p of parts) {
+    if (!n.c || !n.c[p]) return null;
+    n = n.c[p];
+  }
+  return n;
+}
+
+function setNode(path, val) {
+  const parts = path.split('/').filter(Boolean);
+  if (!parts.length) return false;
+  let n = FS['/'];
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!n.c || !n.c[parts[i]]) return false;
+    n = n.c[parts[i]];
+  }
+  if (!n.c) n.c = {};
+  n.c[parts[parts.length - 1]] = val;
+  return true;
+}
+
+function delNode(path) {
+  const parts = path.split('/').filter(Boolean);
+  if (!parts.length) return false;
+  let n = FS['/'];
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!n.c || !n.c[parts[i]]) return false;
+    n = n.c[parts[i]];
+  }
+  const last = parts[parts.length - 1];
+  if (!n.c || !n.c[last]) return false;
+  delete n.c[last];
+  return true;
+}
+
+function basename(path) {
+  const p = path.split('/').filter(Boolean);
+  return p[p.length - 1] || '/';
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║               COMMAND IMPLEMENTATIONS                   ║
+// ╚══════════════════════════════════════════════════════════╝
+
+// Token type: { t: text, cls: cssClass, html: bool }
+function T(t, cls='', html=false) { return { t, cls, html }; }
+
+function run(raw) {
+  const input = raw.trim();
+  if (!input) return [];
+
+  // Pipe
+  if (input.includes('|')) return runPipe(input);
+
+  const tokens = tokenize(input);
+  const [cmd, ...args] = tokens;
+
+  switch (cmd) {
+    case 'pwd':    return c_pwd();
+    case 'ls':     return c_ls(args);
+    case 'cd':     return c_cd(args);
+    case 'cat':    return c_cat(args);
+    case 'head':   return c_head(args);
+    case 'tail':   return c_tail(args);
+    case 'grep':   return c_grep(args, null);
+    case 'find':   return c_find(args);
+    case 'mkdir':  return c_mkdir(args);
+    case 'cp':     return c_cp(args);
+    case 'mv':     return c_mv(args);
+    case 'rm':     return c_rm(args);
+    case 'sort':   return c_sort(args, null);
+    case 'uniq':   return c_uniq(args, null);
+    case 'wc':     return c_wc(args, null);
+    case 'echo':   return [T(args.join(' '))];
+    case 'clear':  return c_clear();
+    case 'help':   return c_help();
+    case 'hint':   return c_hint();
+    case 'unlock': return c_unlock(args);
+    case 'man':    return c_man(args);
+    case 'whoami': return [T('ghost')];
+    case 'uname':  return [T('Linux NEXUS-7 5.15.0-nexus #1 SMP')];
+    case 'date':   return [T(new Date().toLocaleString('fr-FR'))];
+    case 'history':return cmdHistory.slice().reverse().slice(0,20).map((h,i)=>T(`  ${i+1}  ${h}`,'fg-dim'));
+    default:
+      return [T(`bash: ${cmd}: commande introuvable`,'fg-red')];
+  }
+}
+
+function tokenize(s) {
+  const re = /(?:"([^"]*)")|(?:'([^']*)')|(\S+)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    out.push(m[1] ?? m[2] ?? m[3]);
+  }
+  return out;
+}
+
+function runPipe(input) {
+  const segments = input.split('|').map(s => s.trim());
+  let piped = null;
+  let result = [];
+  for (const seg of segments) {
+    const tokens = tokenize(seg);
+    const [cmd, ...args] = tokens;
+    if (piped !== null) {
+      switch (cmd) {
+        case 'grep':  result = c_grep(args, piped); break;
+        case 'head':  result = c_head_str(piped, args); break;
+        case 'tail':  result = c_tail_str(piped, args); break;
+        case 'sort':  result = c_sort([], piped); break;
+        case 'uniq':  result = c_uniq([], piped); break;
+        case 'wc':    result = c_wc(args, piped); break;
+        default: result = [T(`bash: ${cmd}: commande introuvable`,'fg-red')];
+      }
+    } else {
+      switch (cmd) {
+        case 'cat':  result = c_cat(args); break;
+        case 'ls':   result = c_ls(args); break;
+        case 'find': result = c_find(args); break;
+        case 'echo': result = [T(args.join(' '))]; break;
+        default:     result = run(seg); break;
+      }
+    }
+    piped = result.filter(r => !r.cls.includes('red')).map(r => r.t).join('\n');
+  }
+  return result;
+}
+
+// ── pwd ──
+function c_pwd() { return [T(cwd)]; }
+
+// ── ls ──
+function c_ls(args) {
+  let showAll = false, longFmt = false;
+  let target = cwd;
+  for (const a of args) {
+    if (a.startsWith('-')) { if (a.includes('a')) showAll = true; if (a.includes('l')) longFmt = true; }
+    else { target = resolve(a, cwd); }
+  }
+  const node = getNode(target);
+  if (!node) return [T(`ls: impossible d'accéder à '${target}': Aucun fichier ou dossier`, 'fg-red')];
+  if (!node.d) return [T(basename(target))];
+
+  const entries = Object.entries(node.c || {});
+  const visible = showAll ? entries : entries.filter(([n]) => !n.startsWith('.'));
+  if (!visible.length) return [];
+
+  visible.sort(([a,an],[b,bn]) => {
+    if (an.d && !bn.d) return -1;
+    if (!an.d && bn.d) return 1;
+    return a.localeCompare(b);
+  });
+
+  if (longFmt) {
+    const out = [T(`total ${visible.length * 4}`, 'fg-dim')];
+    for (const [name, n] of visible) {
+      const perm = n.d ? 'drwxr-xr-x' : '-rw-r--r--';
+      const size = n.d ? 4096 : (n.f?.length ?? 0);
+      const cls  = n.d ? 'ls-dir' : (name.startsWith('.') ? 'ls-hidden' : 'ls-file');
+      out.push(T(`${perm}  1 ghost ghost ${String(size).padStart(6)} Jan 01 00:00 ${name}${n.d ? '/' : ''}`, cls));
+    }
+    return out;
+  }
+
+  // Short format — 4 columns
+  const cols = visible.map(([name, n]) => {
+    const cls = n.d ? 'ls-dir' : (name.startsWith('.') ? 'ls-hidden' : 'ls-file');
+    const label = name + (n.d ? '/' : '');
+    return `<span class="${cls}">${label.padEnd(22)}</span>`;
+  });
+  const rows = [];
+  for (let i = 0; i < cols.length; i += 4) {
+    rows.push(T(cols.slice(i, i+4).join(''), '', true));
+  }
+  return rows;
+}
+
+// ── cd ──
+function c_cd(args) {
+  const target = resolve(args[0] || '/home/ghost', cwd);
+  const n = getNode(target);
+  if (!n) return [T(`cd: ${args[0]}: Aucun fichier ou dossier`, 'fg-red')];
+  if (!n.d) return [T(`cd: ${args[0]}: N'est pas un répertoire`, 'fg-red')];
+  cwd = target;
+  return [];
+}
+
+// ── cat ──
+function c_cat(args) {
+  if (!args.length) return [T('cat: opérande manquant', 'fg-red')];
+  const out = [];
+  for (const a of args) {
+    const p = resolve(a, cwd);
+    const n = getNode(p);
+    if (!n) { out.push(T(`cat: ${a}: Aucun fichier ou dossier`, 'fg-red')); continue; }
+    if (n.d) { out.push(T(`cat: ${a}: Est un répertoire`, 'fg-red')); continue; }
+    n.f.split('\n').forEach(l => out.push(T(l)));
+  }
+  return out;
+}
+
+// ── head ──
+function c_head(args) {
+  let n = 10; const files = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-n' && args[i+1]) { n = +args[++i]; }
+    else if (/^-\d+$/.test(args[i])) { n = +args[i].slice(1); }
+    else files.push(args[i]);
+  }
+  if (!files.length) return [T('head: opérande manquant', 'fg-red')];
+  const out = [];
+  for (const f of files) {
+    const p = resolve(f, cwd);
+    const node = getNode(p);
+    if (!node) { out.push(T(`head: ${f}: Aucun fichier ou dossier`, 'fg-red')); continue; }
+    if (node.d) { out.push(T(`head: ${f}: Est un répertoire`, 'fg-red')); continue; }
+    node.f.split('\n').slice(0, n).forEach(l => out.push(T(l)));
+  }
+  return out;
+}
+
+function c_head_str(input, args) {
+  let n = 10;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-n' && args[i+1]) { n = +args[++i]; }
+    else if (/^-\d+$/.test(args[i])) { n = +args[i].slice(1); }
+  }
+  return input.split('\n').slice(0, n).map(l => T(l));
+}
+
+// ── tail ──
+function c_tail(args) {
+  let n = 10; const files = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-n' && args[i+1]) { n = +args[++i]; }
+    else if (/^-\d+$/.test(args[i])) { n = +args[i].slice(1); }
+    else files.push(args[i]);
+  }
+  if (!files.length) return [T('tail: opérande manquant', 'fg-red')];
+  const out = [];
+  for (const f of files) {
+    const p = resolve(f, cwd);
+    const node = getNode(p);
+    if (!node) { out.push(T(`tail: ${f}: Aucun fichier ou dossier`, 'fg-red')); continue; }
+    if (node.d) { out.push(T(`tail: ${f}: Est un répertoire`, 'fg-red')); continue; }
+    node.f.split('\n').slice(-n).forEach(l => out.push(T(l)));
+  }
+  return out;
+}
+
+function c_tail_str(input, args) {
+  let n = 10;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-n' && args[i+1]) { n = +args[++i]; }
+    else if (/^-\d+$/.test(args[i])) { n = +args[i].slice(1); }
+  }
+  return input.split('\n').slice(-n).map(l => T(l));
+}
+
+// ── grep ──
+function c_grep(args, stdin) {
+  let pat = null, files = [], ci = false, showLines = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith('-')) { if (args[i].includes('i')) ci=true; if (args[i].includes('n')) showLines=true; }
+    else if (!pat) pat = args[i];
+    else files.push(args[i]);
+  }
+  if (!pat) return [T('grep: motif manquant', 'fg-red')];
+
+  const re = new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), ci ? 'gi' : 'g');
+
+  const processLines = (lines, prefix='') => {
+    const out = [];
+    lines.forEach((line, idx) => {
+      if (new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), ci ? 'i':'').test(line)) {
+        const highlighted = line.replace(re, m => `<span class="fg-yellow">${m}</span>`);
+        const pre = showLines ? `${prefix}${idx+1}:` : prefix;
+        out.push(T(pre + highlighted, '', true));
+      }
+    });
+    return out;
+  };
+
+  if (stdin !== null) return processLines(stdin.split('\n'));
+
+  if (!files.length) return [T('grep: fichier manquant', 'fg-red')];
+  const out = [];
+  for (const f of files) {
+    const p = resolve(f, cwd);
+    const n = getNode(p);
+    if (!n) { out.push(T(`grep: ${f}: Aucun fichier ou dossier`, 'fg-red')); continue; }
+    if (n.d) { out.push(T(`grep: ${f}: Est un répertoire`, 'fg-red')); continue; }
+    const pfx = files.length > 1 ? `${f}:` : '';
+    out.push(...processLines(n.f.split('\n'), pfx));
+  }
+  return out;
+}
+
+// ── find ──
+function c_find(args) {
+  let start = cwd, name = null, type = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-name' && args[i+1]) { name = args[++i]; }
+    else if (args[i] === '-type' && args[i+1]) { type = args[++i]; }
+    else if (!args[i].startsWith('-')) { if (i === 0 || !args[i-1].startsWith('-')) start = resolve(args[i], cwd); }
+  }
+  const results = [];
+  function walk(path, node) {
+    if (!node) return;
+    const n = basename(path) || '/';
+    let match = true;
+    if (name) {
+      const re = new RegExp('^' + name.replace(/\*/g,'.*').replace(/\?/g,'.') + '$');
+      if (!re.test(n)) match = false;
+    }
+    if (type) { if (type==='d' && !node.d) match=false; if (type==='f' && node.d) match=false; }
+    if (match && path !== start) results.push(T(path, node.d ? 'fg-cyan' : ''));
+    if (node.d && node.c) {
+      for (const [cn, ch] of Object.entries(node.c)) {
+        walk(path === '/' ? `/${cn}` : `${path}/${cn}`, ch);
+      }
+    }
+  }
+  const startNode = getNode(start);
+  if (!startNode) return [T(`find: '${start}': Aucun fichier ou dossier`, 'fg-red')];
+  walk(start, startNode);
+  return results.length ? results : [T('find: aucun résultat', 'fg-dim')];
+}
+
+// ── mkdir ──
+function c_mkdir(args) {
+  if (!args.length) return [T('mkdir: opérande manquant', 'fg-red')];
+  const dirs = args.filter(a => !a.startsWith('-'));
+  const out = [];
+  for (const d of dirs) {
+    const p = resolve(d, cwd);
+    if (getNode(p)) { out.push(T(`mkdir: impossible de créer '${d}': Le fichier existe`, 'fg-red')); continue; }
+    if (!setNode(p, { d: true, c: {} })) {
+      out.push(T(`mkdir: impossible de créer '${d}': Aucun fichier ou dossier parent`, 'fg-red'));
+    }
+  }
+  triggerLevel4Check();
+  return out;
+}
+
+// ── cp ──
+function c_cp(args) {
+  const files = args.filter(a => !a.startsWith('-'));
+  if (files.length < 2) return [T('cp: opérande manquant', 'fg-red')];
+  const dest = files[files.length - 1];
+  const srcs = files.slice(0, -1);
+  const out = [];
+  for (const src of srcs) {
+    const sp = resolve(src, cwd);
+    const sn = getNode(sp);
+    if (!sn) { out.push(T(`cp: ${src}: Aucun fichier ou dossier`, 'fg-red')); continue; }
+    let dp = resolve(dest, cwd);
+    const dn = getNode(dp);
+    if (dn && dn.d) dp += '/' + basename(sp);
+    setNode(dp, JSON.parse(JSON.stringify(sn)));
+  }
+  triggerLevel4Check();
+  return out;
+}
+
+// ── mv ──
+function c_mv(args) {
+  const files = args.filter(a => !a.startsWith('-'));
+  if (files.length < 2) return [T('mv: opérande manquant', 'fg-red')];
+  const dest = files[files.length - 1];
+  const srcs = files.slice(0, -1);
+  const out = [];
+  for (const src of srcs) {
+    const sp = resolve(src, cwd);
+    const sn = getNode(sp);
+    if (!sn) { out.push(T(`mv: ${src}: Aucun fichier ou dossier`, 'fg-red')); continue; }
+    let dp = resolve(dest, cwd);
+    const dn = getNode(dp);
+    if (dn && dn.d) dp += '/' + basename(sp);
+    setNode(dp, JSON.parse(JSON.stringify(sn)));
+    delNode(sp);
+  }
+  return out;
+}
+
+// ── rm ──
+function c_rm(args) {
+  if (!args.length) return [T('rm: opérande manquant', 'fg-red')];
+  const recursive = args.some(a => a.includes('r') || a.includes('R'));
+  const files = args.filter(a => !a.startsWith('-'));
+  const out = [];
+  for (const f of files) {
+    const p = resolve(f, cwd);
+    const n = getNode(p);
+    if (!n) { out.push(T(`rm: impossible de supprimer '${f}': Aucun fichier ou dossier`, 'fg-red')); continue; }
+    if (n.d && !recursive) { out.push(T(`rm: impossible de supprimer '${f}': Est un répertoire (utilise -r)`, 'fg-red')); continue; }
+    delNode(p);
+  }
+  return out;
+}
+
+// ── sort / uniq / wc ──
+function c_sort(args, stdin) {
+  let content;
+  if (stdin !== null) { content = stdin; }
+  else {
+    const f = args.find(a => !a.startsWith('-'));
+    if (!f) return [T('sort: opérande manquant', 'fg-red')];
+    const n = getNode(resolve(f, cwd));
+    if (!n) return [T(`sort: ${f}: Aucun fichier ou dossier`, 'fg-red')];
+    content = n.f;
+  }
+  return content.split('\n').sort().map(l => T(l));
+}
+
+function c_uniq(args, stdin) {
+  let content;
+  if (stdin !== null) { content = stdin; }
+  else {
+    const f = args.find(a => !a.startsWith('-'));
+    if (!f) return [T('uniq: opérande manquant', 'fg-red')];
+    const n = getNode(resolve(f, cwd));
+    if (!n) return [T(`uniq: ${f}: Aucun fichier ou dossier`, 'fg-red')];
+    content = n.f;
+  }
+  const lines = content.split('\n');
+  return lines.filter((l,i) => i === 0 || l !== lines[i-1]).map(l => T(l));
+}
+
+function c_wc(args, stdin) {
+  let content, name = '';
+  if (stdin !== null) { content = stdin; }
+  else {
+    const f = args.find(a => !a.startsWith('-'));
+    if (!f) return [T('wc: opérande manquant', 'fg-red')];
+    const n = getNode(resolve(f, cwd));
+    if (!n) return [T(`wc: ${f}: Aucun fichier ou dossier`, 'fg-red')];
+    content = n.f; name = ' ' + f;
+  }
+  const l = content.split('\n').length;
+  const w = content.split(/\s+/).filter(Boolean).length;
+  const c = content.length;
+  return [T(`${String(l).padStart(6)} ${String(w).padStart(6)} ${String(c).padStart(6)}${name}`)];
+}
+
+// ── clear ──
+function c_clear() {
+  document.getElementById('terminalBody').innerHTML = '';
+  return [];
+}
+
+// ── help ──
+function c_help() {
+  const lv = LEVELS[level - 1];
+  return [
+    T('╔══════════════════════════════════════════════╗', 'fg-cyan'),
+    T('║          COMMANDES DISPONIBLES              ║', 'fg-cyan'),
+    T('╚══════════════════════════════════════════════╝', 'fg-cyan'),
+    T(''),
+    T('Navigation :', 'fg-yellow'),
+    T('  pwd                   répertoire actuel'),
+    T('  ls [-a] [-l] [chemin] liste les fichiers  (-a: cachés, -l: détails)'),
+    T('  cd [chemin]           change de répertoire'),
+    T(''),
+    T('Lecture :', 'fg-yellow'),
+    T('  cat <fichier>             affiche un fichier'),
+    T('  head [-n N] <fichier>     N premières lignes'),
+    T('  tail [-n N] <fichier>     N dernières lignes'),
+    T(''),
+    T('Recherche :', 'fg-yellow'),
+    T('  grep [-i] [-n] <motif> <fichier>  cherche un motif'),
+    T('  find [chemin] [-name <nom>] [-type f/d]'),
+    T(''),
+    T('Manipulation :', 'fg-yellow'),
+    T('  mkdir <rep>       crée un répertoire'),
+    T('  cp <src> <dest>   copie un fichier'),
+    T('  mv <src> <dest>   déplace / renomme'),
+    T('  rm [-r] <cible>   supprime'),
+    T(''),
+    T('Combinaison :', 'fg-yellow'),
+    T('  cmd1 | cmd2       passe la sortie de cmd1 à cmd2'),
+    T('  sort / uniq / wc  trier, dédupliquer, compter'),
+    T(''),
+    T('Utilitaires :', 'fg-yellow'),
+    T('  hint            indice pour le niveau actuel'),
+    T('  unlock <CODE>   entre le code de déverrouillage'),
+    T('  man <cmd>       manuel d\'une commande'),
+    T('  history         historique des commandes'),
+    T('  clear           efface l\'écran   (ou Ctrl+L)'),
+    T(''),
+    T('─────────────────────────────────────────────', 'fg-dim'),
+    T(`OBJECTIF : ${lv.obj}`, 'fg-orange'),
+    T('─────────────────────────────────────────────', 'fg-dim'),
+  ];
+}
+
+// ── hint ──
+function c_hint() {
+  const lv = LEVELS[level - 1];
+  return [
+    T('╔─ INDICE ───────────────────────────────────╗', 'fg-yellow'),
+    T(`║  ${lv.hint}`, 'fg-yellow'),
+    T('╚────────────────────────────────────────────╝', 'fg-yellow'),
+  ];
+}
+
+// ── unlock ──
+function c_unlock(args) {
+  if (!args.length) return [T('unlock: code manquant', 'fg-red')];
+  const code = args[0].toUpperCase();
+  const lv = LEVELS[level - 1];
+  if (code === lv.code) return doAdvance();
+  return [
+    T(`[ACCÈS REFUSÉ] Code "${code}" invalide.`, 'fg-red'),
+    T('Continue à chercher…', 'fg-dim'),
+  ];
+}
+
+// ── man ──
+function c_man(args) {
+  const pages = {
+    pwd:   'pwd\n  Affiche le chemin du répertoire courant.\n  Exemple : pwd',
+    ls:    'ls [-a] [-l] [chemin]\n  Liste le contenu d\'un répertoire.\n  -a : affiche les fichiers cachés (commençant par ".")\n  -l : format détaillé avec permissions\n  Exemple : ls -a /home/ghost',
+    cd:    'cd [chemin]\n  Change le répertoire courant.\n  Exemples : cd /var/log  |  cd ..  |  cd ~',
+    cat:   'cat <fichier>\n  Affiche le contenu d\'un fichier.\n  Exemple : cat /etc/hostname',
+    head:  'head [-n N] <fichier>\n  Affiche les N premières lignes (défaut : 10).\n  Exemple : head -n 5 fichier.txt',
+    tail:  'tail [-n N] <fichier>\n  Affiche les N dernières lignes (défaut : 10).\n  Exemple : tail -n 3 /var/log/system.log',
+    grep:  'grep [-i] [-n] <motif> <fichier>\n  Recherche un motif dans un fichier.\n  -i : insensible à la casse\n  -n : affiche les numéros de ligne\n  Exemple : grep "erreur" /var/log/system.log',
+    find:  'find [chemin] [-name <nom>] [-type f|d]\n  Cherche des fichiers dans l\'arborescence.\n  Exemple : find / -name "*.txt"\n  Exemple : find /opt -type f',
+    mkdir: 'mkdir <répertoire>\n  Crée un nouveau répertoire.\n  Exemple : mkdir /tmp/monrep',
+    cp:    'cp <source> <destination>\n  Copie un fichier ou répertoire.\n  Exemple : cp fichier.txt /tmp/',
+    mv:    'mv <source> <destination>\n  Déplace ou renomme un fichier.\n  Exemple : mv old.txt new.txt',
+    rm:    'rm [-r] <cible>\n  Supprime un fichier (-r pour un répertoire).\n  Exemple : rm fichier.txt',
+    sort:  'sort [fichier]\n  Trie les lignes par ordre alphabétique.\n  Utilisable avec pipe : cat f.txt | sort',
+    uniq:  'uniq [fichier]\n  Supprime les lignes consécutives dupliquées.\n  Utilisable avec pipe : cat f.txt | sort | uniq',
+    wc:    'wc [-l] [fichier]\n  Compte les lignes, mots et caractères.\n  Exemple : wc -l fichier.txt',
+  };
+  if (!args[0]) return [T('man: quelle page de manuel souhaitez-vous ?', 'fg-red')];
+  const page = pages[args[0]];
+  if (!page) return [T(`man: aucune entrée pour '${args[0]}'`, 'fg-red')];
+  return page.split('\n').map(l => T(l, 'fg-dim'));
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                  LEVEL MANAGEMENT                       ║
+// ╚══════════════════════════════════════════════════════════╝
+function triggerLevel4Check() {
+  if (level !== 4) return;
+  const sortie   = getNode('/escape/sortie');
+  const hostname = getNode('/escape/sortie/hostname');
+  if (sortie && hostname && !getNode('/escape/sortie/fragment.txt')) {
+    setNode('/escape/sortie/fragment.txt', {
+      f: `FÉLICITATIONS !
+Tu as correctement manipulé les fichiers.
+Fragment déverrouillé : DELTA-4
+─────────────────────────────────
+Utilise : unlock DELTA-4`
+    });
+    setTimeout(() => {
+      appendLines([
+        T(''),
+        T('[SYSTÈME] Vérification en cours…', 'fg-yellow'),
+      ]);
+      setTimeout(() => appendLines([
+        T('[SYSTÈME] Conditions remplies !', 'fg-green'),
+        T('[SYSTÈME] Nouveau fichier : /escape/sortie/fragment.txt', 'fg-green'),
+      ]), 900);
+    }, 400);
+  }
+}
+
+function doAdvance() {
+  const lv = LEVELS[level - 1];
+  if (level === LEVELS.length) {
+    setTimeout(showVictory, 600);
+    return [
+      T(''),
+      T('██████████████████████████████████████████████', 'fg-green'),
+      T('▓▓  SÉQUENCE D\'ÉVASION COMPLÈTE ! BRAVO !  ▓▓', 'fg-green'),
+      T('██████████████████████████████████████████████', 'fg-green'),
+    ];
+  }
+  level++;
+  updateHUD();
+  const next = LEVELS[level - 1];
+  return [
+    T(''),
+    T('══════════════════════════════════════════════', 'fg-green'),
+    T(`  ✓  ${lv.done}`, 'fg-green'),
+    T('══════════════════════════════════════════════', 'fg-green'),
+    T(''),
+    T(`▶  NIVEAU ${level} : ${next.name}`, 'fg-cyan'),
+    T(`   Nouvelles commandes : ${next.cmds.join('  ')}`, 'fg-yellow'),
+    T(''),
+    T(`OBJECTIF :`, 'fg-orange'),
+    ...next.obj.split('\n').map(l => T('  ' + l, 'fg-orange')),
+    T(''),
+    T('  (tape "hint" si tu es bloqué)', 'fg-dim'),
+    T(''),
+  ];
+}
+
+function updateHUD() {
+  const pct = Math.round(((level - 1) / LEVELS.length) * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent  = pct + '%';
+  document.getElementById('levelBadge').textContent   = `NIVEAU ${level} / 5`;
+}
+
+function showVictory() {
+  // Final progress
+  document.getElementById('progressFill').style.width = '100%';
+  document.getElementById('progressPct').textContent  = '100%';
+
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  document.querySelector('#victoryBox h1').insertAdjacentHTML(
+    'afterend',
+    `<div style="color:var(--dim);font-size:12px;margin-bottom:16px;">Temps : ${mins}m ${secs}s</div>`
+  );
+
+  document.getElementById('victoryOverlay').classList.add('show');
+
+  let f = 0;
+  const iv = setInterval(() => {
+    document.getElementById('terminalWindow').style.boxShadow =
+      f++ % 2 === 0
+        ? '0 0 50px var(--green), 0 0 100px #00ff4166'
+        : '0 0 10px var(--green)';
+    if (f > 10) { clearInterval(iv); document.getElementById('terminalWindow').style.boxShadow = ''; }
+  }, 180);
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                     TERMINAL UI                         ║
+// ╚══════════════════════════════════════════════════════════╝
+const body = document.getElementById('terminalBody');
+
+function promptHTML() {
+  const short = cwd.replace('/home/ghost', '~');
+  return `<span class="fg-green">ghost@nexus-7</span><span class="fg-dim">:</span><span class="fg-cyan">${short}</span><span class="fg-dim">$</span>`;
+}
+
+function appendLines(lines, delayPerLine = 12) {
+  let i = 0;
+  for (const l of lines) {
+    setTimeout(() => {
+      const d = document.createElement('div');
+      d.className = 'line ' + (l.cls || '');
+      if (l.html) d.innerHTML = l.t;
+      else        d.textContent = l.t;
+      body.appendChild(d);
+      body.scrollTop = body.scrollHeight;
+    }, i * delayPerLine);
+    i++;
+  }
+  return i * delayPerLine;
+}
+
+function addPromptRow() {
+  const row = document.createElement('div');
+  row.className = 'prompt-row';
+  row.id = 'activeRow';
+
+  const span = document.createElement('span');
+  span.className = 'prompt-text';
+  span.innerHTML = promptHTML() + '&nbsp;';
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = '';
+  inp.id = 'cmdInput';
+  inp.autocomplete = 'off';
+  inp.autocorrect  = 'off';
+  inp.autocapitalize = 'off';
+  inp.spellcheck   = false;
+
+  row.appendChild(span);
+  row.appendChild(inp);
+  body.appendChild(row);
+  body.scrollTop = body.scrollHeight;
+
+  inp.focus();
+  inp.addEventListener('keydown', onKey);
+
+  // Re-focus click anywhere
+  body.addEventListener('click', () => document.getElementById('cmdInput')?.focus(), { once: false });
+}
+
+function onKey(e) {
+  const inp = e.target;
+  if (e.key === 'Enter') {
+    const cmd = inp.value;
+    // Freeze row
+    const row = document.getElementById('activeRow');
+    row.removeAttribute('id');
+    inp.replaceWith(document.createTextNode(cmd));
+    inp.removeEventListener('keydown', onKey);
+
+    if (cmd.trim()) { cmdHistory.unshift(cmd); histIdx = -1; }
+
+    const out = run(cmd);
+    const delay = appendLines(out, 12);
+    setTimeout(addPromptRow, Math.max(delay + 30, 80));
+
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (histIdx < cmdHistory.length - 1) inp.value = cmdHistory[++histIdx];
+
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (histIdx > 0) inp.value = cmdHistory[--histIdx];
+    else { histIdx = -1; inp.value = ''; }
+
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    doTabComplete(inp);
+
+  } else if (e.ctrlKey && e.key === 'l') {
+    e.preventDefault();
+    c_clear();
+    addPromptRow();
+
+  } else if (e.ctrlKey && e.key === 'c') {
+    e.preventDefault();
+    const row = document.getElementById('activeRow');
+    row.removeAttribute('id');
+    inp.replaceWith(document.createTextNode(inp.value + '^C'));
+    setTimeout(addPromptRow, 40);
+  }
+}
+
+function doTabComplete(inp) {
+  const val = inp.value;
+  const tokens = tokenize(val);
+  if (!tokens.length) return;
+  const last = tokens[tokens.length - 1];
+
+  let basePath, prefix;
+  if (last.includes('/')) {
+    const cut = last.lastIndexOf('/');
+    basePath = resolve(last.slice(0, cut) || '/', cwd);
+    prefix   = last.slice(cut + 1);
+  } else {
+    basePath = cwd;
+    prefix   = last;
+  }
+
+  const bn = getNode(basePath);
+  if (!bn || !bn.d) return;
+
+  const matches = Object.entries(bn.c || {})
+    .filter(([n]) => n.startsWith(prefix) && !n.startsWith('.'))
+    .map(([n, nd]) => n + (nd.d ? '/' : ''));
+
+  if (matches.length === 1) {
+    const base = last.includes('/') ? last.slice(0, last.lastIndexOf('/') + 1) : '';
+    tokens[tokens.length - 1] = base + matches[0];
+    inp.value = tokens.join(' ');
+  } else if (matches.length > 1) {
+    const d = document.createElement('div');
+    d.className = 'line fg-dim';
+    d.textContent = matches.join('  ');
+    body.insertBefore(d, document.getElementById('activeRow'));
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                    BOOT SEQUENCE                        ║
+// ╚══════════════════════════════════════════════════════════╝
+const ASCII_LOGO = [
+  ' ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗    ███████╗',
+  ' ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝   ╚════██╔╝',
+  ' ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗       ██╔╝ ',
+  ' ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║      ██╔╝  ',
+  ' ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║      ██║   ',
+  ' ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝      ╚═╝   ',
+];
+
+const BOOT_MESSAGES = [
+  '> Initialisation du kernel NEXUS-7 v2.4.1…',
+  '> Chargement des modules de sécurité…',
+  '> Montage du système de fichiers virtuel…',
+  '> Démarrage du protocole ARIA…',
+  '> Établissement du périmètre de confinement…',
+  '> Vérification de l\'intégrité des données…',
+  '> Connexion de l\'utilisateur ghost…',
+  '> Préparation du terminal interactif…',
+  '',
+];
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function boot() {
+  const asciiEl  = document.getElementById('bootAscii');
+  const logEl    = document.getElementById('bootLog');
+  const agEl     = document.getElementById('accessGranted');
+
+  // Draw ASCII
+  for (const line of ASCII_LOGO) {
+    asciiEl.textContent += line + '\n';
+    await sleep(55);
+  }
+
+  await sleep(200);
+
+  // Boot messages
+  for (const msg of BOOT_MESSAGES) {
+    const d = document.createElement('div');
+    d.className = 'line';
+    d.style.animationDelay = '0s';
+    d.textContent = msg;
+    d.classList.add('line');
+    logEl.appendChild(d);
+    void d.offsetWidth;
+    d.style.opacity = '0';
+    d.style.animation = 'fadeLine 0.18s forwards';
+    await sleep(msg ? 160 : 300);
+  }
+
+  await sleep(300);
+  agEl.style.animation = 'fadeLine 0.4s forwards';
+  await sleep(700);
+
+  // Fade out
+  const bs = document.getElementById('bootScreen');
+  bs.style.opacity = '0';
+  await sleep(700);
+  bs.style.display = 'none';
+
+  startGame();
+}
+
+function startGame() {
+  startTime = Date.now();
+  const lv = LEVELS[0];
+  const intro = [
+    T('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'fg-green'),
+    T('  BASH ESCAPE GAME — Apprends les commandes bash', 'fg-cyan'),
+    T('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'fg-green'),
+    T(''),
+    T('Bienvenue sur NEXUS-7, utilisateur ghost.', 'fg-white'),
+    T('Tu es prisonnier de ce serveur isolé.', 'fg-white'),
+    T('Pour t\'évader, collecte les 5 fragments de code secret.', 'fg-white'),
+    T(''),
+    T('  help   → liste toutes les commandes', 'fg-dim'),
+    T('  hint   → indice pour le niveau actuel', 'fg-dim'),
+    T('  man <cmd>  → manuel d\'une commande', 'fg-dim'),
+    T(''),
+    T('──────────────────────────────────────────────', 'fg-dim'),
+    T(`▶  NIVEAU 1 : ${lv.name}`, 'fg-cyan'),
+    T(`   Commandes : ${lv.cmds.join('  ')}`, 'fg-yellow'),
+    T(''),
+    T('OBJECTIF :', 'fg-orange'),
+    ...lv.obj.split('\n').map(l => T('  ' + l, 'fg-orange')),
+    T('──────────────────────────────────────────────', 'fg-dim'),
+    T(''),
+  ];
+
+  const delay = appendLines(intro, 14);
+  setTimeout(() => {
+    updateHUD();
+    addPromptRow();
+  }, delay + 100);
+}
+
+window.addEventListener('load', boot);
+</script>
+</body>
+</html>
