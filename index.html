@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUS-7 :: Bash Escape</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     BOOT SCREEN
+══════════════════════════════════════ -->
+<div id="bootScreen">
+  <div class="ascii" id="bootAscii"></div>
+  <div class="boot-log" id="bootLog"></div>
+  <div class="access-granted" id="accessGranted">[ ACCÈS ACCORDÉ ]</div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TERMINAL
+══════════════════════════════════════ -->
+<div id="terminalWindow">
+  <div id="titleBar">
+    <div class="dots">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+    </div>
+    <span class="title">NEXUS-7 :: TERMINAL v2.4.1</span>
+    <span id="levelBadge">NIVEAU 1 / 5</span>
+  </div>
+
+  <div id="terminalBody"></div>
+
+  <div id="progressBar">
+    <span class="label">PROGRESSION</span>
+    <div id="progressTrack"><div id="progressFill"></div></div>
+    <span id="progressPct">0%</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     VICTORY OVERLAY
+══════════════════════════════════════ -->
+<div id="victoryOverlay">
+  <div id="victoryBox">
+    <h1 class="glow">🔓 ÉVASION RÉUSSIE</h1>
+    <div style="color:var(--green-dim);margin-bottom:16px;">NEXUS-7 est hors ligne. Tu es libre.</div>
+    <div class="stat">✓ Navigation  — <span style="color:var(--green)">pwd &nbsp; ls &nbsp; cd</span></div>
+    <div class="stat">✓ Lecture     — <span style="color:var(--green)">cat &nbsp; head &nbsp; tail</span></div>
+    <div class="stat">✓ Recherche   — <span style="color:var(--green)">grep &nbsp; find</span></div>
+    <div class="stat">✓ Manipulation — <span style="color:var(--green)">mkdir &nbsp; cp &nbsp; mv &nbsp; rm</span></div>
+    <div class="stat">✓ Combinaison — <span style="color:var(--green)">pipes &nbsp; sort &nbsp; uniq &nbsp; wc</span></div>
+    <div style="margin-top:16px;color:var(--yellow);font-size:12px;">
+      Fragments : ALPHA-1 · BRAVO-2 · CHARLIE-3 · DELTA-4 · ECHO-5
+    </div>
+    <button id="restartBtn" onclick="location.reload()">REJOUER</button>
+  </div>
+</div>
+
+<script src="js/filesystem.js" defer></script>
+<script src="js/game.js" defer></script>
+<script src="js/commands.js" defer></script>
+<script src="js/terminal.js" defer></script>
+<script src="js/boot.js" defer></script>
+</body>
+</html>
